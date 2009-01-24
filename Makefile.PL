@@ -10,7 +10,10 @@ WriteMakefile(
     INST_SCRIPT => 'bin',
     PL_FILES            => {},
     PREREQ_PM => {
-        'Test::More' => 0,
+				  'Test::More' => 0,
+				  'ZConf'=>0,
+				  'File::Spec'=>0,
+				  'Image::Size::FillFullSelect'=>0,
     },
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean               => { FILES => 'ZConf-BGSet-*' },

@@ -98,7 +98,7 @@ if(defined($opts{l})){
 
 #handles if if a random background is selected
 if(defined($opts{r})){
-	$zbg->setRand({image=>$opts{f}, filltype=>$opts{F}});
+	$zbg->setRand();
 	if ($zbg->{error}) {
 		warn('zbgset:4: setRand errored');
 		exit 4;

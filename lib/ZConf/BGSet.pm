@@ -12,11 +12,11 @@ ZConf::BGSet - A perl module for background management.
 
 =head1 VERSION
 
-Version 0.0.0
+Version 0.0.1
 
 =cut
 
-our $VERSION = '0.0.0';
+our $VERSION = '0.0.1';
 
 
 =head1 SYNOPSIS
@@ -208,7 +208,7 @@ This is the fill type that was used.
 This is the image the background was set to.
 
     $zbg->addToLast({image=>'/tmp/something.jpg', filltype=>'full'});
-    if($self->{error}){
+    if($zbg->{error}){
         print "Error!\n";
     }
 
@@ -395,13 +395,13 @@ it is not defined, ZConf will use the default one.
 
     #creates a new set named foo
     $zbg->init('foo');
-    if($self->{error}){
+    if($zbg->{error}){
         print "Error!\n";
     }
 
     #creates a new set with ZConf choosing it's name
     $zbg->init();
-    if($self->{error}){
+    if($zbg->{error}){
         print "Error!\n";
     }
 
@@ -478,7 +478,7 @@ sub init{
 This gets a lists of configured paths.
 
     my @paths=$zbg->listPaths();
-    if($self->{error}){
+    if($zbg->{error}){
         print "Error!\n";
     }
 
@@ -512,7 +512,7 @@ This verifies a path exists.
 Only one arguement is taken and that is the name of the path.
 
     my $returned=$zbg->pathExists('foo');
-    if($self->{error}){
+    if($zbg->{error}){
         print "Error!\n";
     }else{
         if(!$returned){
@@ -765,7 +765,7 @@ This verifies a path exists.
 Only one arguement is taken and that is the name of the setter.
 
     my $returned=$zbg->setterExists('foo');
-    if($self->{error}){
+    if($zbg->{error}){
         print "Error!\n";
     }else{
         if(!$returned){
