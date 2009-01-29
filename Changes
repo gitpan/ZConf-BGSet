@@ -1,5 +1,8 @@
 Revision history for ZConf-BGSet
 
+0.0.2	2009-01-28/19:10
+		-Fix the return of listPaths.
+
 0.0.1	2009-01-23/18:50
 		-Correct how zbgset calls setRand.
 		-Correct were self was used in the pod instead of zbg.

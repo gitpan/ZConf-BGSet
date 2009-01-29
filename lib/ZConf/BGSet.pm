@@ -490,7 +490,7 @@ sub listPaths{
 	#blanks any previous errors
 	$self->errorblank;
 
-	my @paths=$self->{zconf}->regexVarGet('zbgset', '^paths/');
+	my %paths=$self->{zconf}->regexVarGet('zbgset', '^paths/');
 	if ($self->{zconf}->{error}) {
 		warn("ZConf-BGSet listPaths:2: regexVarGet failed.".
 			 " It failed with '".$self->{zconf}->{error}."', '"
@@ -502,7 +502,7 @@ sub listPaths{
 		return undef;
 	}
 
-	return @paths;
+	return keys(%paths);
 }
 
 =head2 pathExists
