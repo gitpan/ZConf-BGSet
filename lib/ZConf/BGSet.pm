@@ -12,11 +12,11 @@ ZConf::BGSet - A perl module for background management.
 
 =head1 VERSION
 
-Version 0.0.1
+Version 0.1.0
 
 =cut
 
-our $VERSION = '0.0.1';
+our $VERSION = '0.1.0';
 
 
 =head1 SYNOPSIS
@@ -310,6 +310,232 @@ sub addToLast{
 	return 1;
 }
 
+=head2 createPath
+
+This creates a path. If a path already exists, it will error.
+
+Two arguements are required. The first is the name of the path
+and the second is a array containing the various paths.
+
+    $zbg->setPath('somepath', @paths);
+    if($zbg->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub createPath{
+	my $self=$_[0];
+	my $path=$_[1];
+	my @paths=$_[2];
+
+	#blanks any previous errors
+	$self->errorblank;
+
+	if (!defined($path)) {
+		warn('ZConf-BGSet getPath:5: No path specified');
+		$self->{error}=5;
+		$self->{errorString}='No path specified.';
+		return undef;
+	}
+
+	#check if it exists and error if there is an error
+	my $pathExists=$self->pathExists($path);
+	if ($self->{error}) {
+		warn('ZConf-BGSet createPath: pathExists("'.$path.'") errored. '.
+			 'error="'.$self->{error}.'" errorString="'.$self->{errorString}.'"');
+		return undef;
+	}
+
+	#error if the path already exists
+	if ($pathExists) {
+		warn('ZConf-BGSet The path "'.$path.'" already exists');
+		$self->{error}=16;
+		$self->{errorString}='The path "'.$path.'" already exists';
+		return undef;
+	}
+
+	#sets the path string
+	my $pathString='';
+	if (defined($paths[0])) {
+		$pathString=join("\n", @paths);
+	}
+
+	#
+	$self->{zconf}->setVar('zbgset', 'paths/'.$path, $pathString);
+
+	if ($self->{zconf}->{error}) {
+		warn('ZConf-BGSet createPath:2: ZConf setVar errored. error="'.
+			 $self->{zconf}->{error}.'" errorString="'.
+			 $self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf setVar errored. error="'.
+		                      $self->{zconf}->{error}.'" errorString="'.
+		                      $self->{zconf}->{errorString}.'"';
+		return undef;
+	}
+
+	$self->{zconf}->writeSetFromLoadedConfig({config=>'zbgset'});
+	if ($self->{zconf}->{error}) {
+		warn('ZConf-BGSet createPath:2: ZConf writeSetFromLoadedConfig errored. error="'.
+			 $self->{zconf}->{error}.'" errorString="'.
+			 $self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf writeSetFromLoadedConfig errored. error="'.
+		                      $self->{zconf}->{error}.'" errorString="'.
+		                      $self->{zconf}->{errorString}.'"';
+		return undef;
+	}
+
+	return 1;
+}
+
+=head2 delPath
+
+This removes a specified path.
+
+One arguement is taken and that is the name of the path to remove.
+
+    $zbg->delPath('somepath');
+    if($zbg->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub delPath{
+	my $self=$_[0];
+	my $path=$_[1];
+
+	#blanks any previous errors
+	$self->errorblank;
+
+	if (!defined($path)) {
+		warn('ZConf-BGSet delPath:5: No path specified');
+		$self->{error}=5;
+		$self->{errorString}='No path specified.';
+		return undef;
+	}
+
+	my $pathExists=$self->pathExists($path);
+	if ($self->{error}) {
+		warn('ZConf-BGSet delPath: pathExists("'.$path.'") errored. '.
+			 'error="'.$self->{error}.'" errorString="'.$self->{errorString}.'"');
+		return undef;
+	}
+
+	if (!$pathExists) {
+		warn('ZConf-BGSet delPath:14: The path "'.$path.'" does not exist');
+		$self->{error}=14;
+		$self->{errorString}='The path "'.$path.'" does not exist';
+		return undef;
+	}
+
+	#remove it
+	my @deleted=$self->{zconf}->regexVarDel('zbgset', '^paths/'.quotemeta($path).'$');
+	if ($self->{zconf}->{error}) {
+		warn('ZConf-BGSet delPath:2: ZConf regexVarDel errored. error="'.
+			 $self->{zconf}->{error}.'" errorString="'.
+			 $self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf writeSetFromLoadedConfig errored. error="'.
+		                      $self->{zconf}->{error}.'" errorString="'.
+		                      $self->{zconf}->{errorString}.'"';
+		return undef;
+	}
+
+
+	#write it
+	$self->{zconf}->writeSetFromLoadedConfig({config=>'zbgset'});
+	if ($self->{zconf}->{error}) {
+		warn('ZConf-BGSet delPath:2: ZConf writeSetFromLoadedConfig errored. error="'.
+			 $self->{zconf}->{error}.'" errorString="'.
+			 $self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf writeSetFromLoadedConfig errored. error="'.
+		                      $self->{zconf}->{error}.'" errorString="'.
+		                      $self->{zconf}->{errorString}.'"';
+		return undef;
+	}
+
+	return 1;
+}
+
+=head2 getDefaultPath
+
+This fetches the default path.
+
+    my $path=$zbg->getDefaultPath;
+    if($zbg->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub getDefaultPath{
+	my $self=$_[0];
+
+	#blanks any previous errors
+	$self->errorblank;
+
+	if (!defined($self->{zconf}->{conf}{zbgset}{path})) {
+		warn('ZConf-BGSet getDefaultPath:15: No default path defined');
+		$self->{error}=15;
+		$self->{errorString}='No default path defined';
+		return undef;
+	}
+
+	return $self->{zconf}->{conf}{zbgset}{path};
+}
+
+=head2 getLast
+
+This fetches information on the last file set.
+
+It also does not have to be checked for errors as it
+will never set an error.
+
+No arguements are taken.
+
+    my %last=$zbg->getLast;
+    if(!defined($last{file})){
+        print "No previous last.\n";
+    }else{
+        print 'file: '.$last{file}."\n".
+              'filltype: '.$last{filltype}."\n".
+              'display: '.$last{display}."\n".
+              'hostname: '.$last{hostname}."\n";
+    }
+
+=cut
+
+sub getLast{
+	my $self=$_[0];
+
+	my %returnH;
+	$returnH{display}=undef;
+	$returnH{hostname}=undef;
+	$returnH{filltype}=undef;
+	$returnH{file}=undef;
+
+	#returns it if last has been removed for some bloody reason
+	if (!defined($self->{zconf}->{conf}->{zbgset}->{last})) {
+		return %returnH;
+	}
+
+	#get the last and remove any thing after the newline
+	my $lastraw=$self->{zconf}->{conf}->{zbgset}->{last};
+	$lastraw=~s/\n.*//g;
+
+	my @lastA=split(/:/, $lastraw,4);
+
+	$returnH{file}=$lastA[3];
+	$returnH{filltype}=$lastA[2];
+	$returnH{display}=$lastA[1];
+	$returnH{hostname}=$lastA[0];
+
+	return %returnH;
+}
 
 =head2 getLastRaw
 
@@ -337,6 +563,52 @@ sub getLastRaw{
 
 	#return the last
 	return $self->{zconf}->{conf}->{zbgset}->{last};
+}
+
+=head2 getPath
+
+This fetches a specified path.
+
+One arguement is taken and that is the path name.
+
+The returned value is an array
+
+    my @paths=$zbg->getPath('somepath');
+    if($zbg->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub getPath{
+	my $self=$_[0];
+	my $path=$_[1];
+
+	#blanks any previous errors
+	$self->errorblank;
+
+	if (!defined($path)) {
+		warn('ZConf-BGSet getPath:5: No path specified');
+		$self->{error}=5;
+		$self->{errorString}='No path specified.';
+		return undef;
+	}
+
+	my $pathExists=$self->pathExists($path);
+	if ($self->{error}) {
+		warn('ZConf-BGSet getPath: pathExists("'.$path.'") errored. '.
+			 'error="'.$self->{error}.'" errorString="'.$self->{errorString}.'"');
+		return undef;
+	}
+
+	if (!$pathExists) {
+		warn('ZConf-BGSet getPath:14: The path "'.$path.'" does not exist');
+		$self->{error}=14;
+		$self->{errorString}='The path "'.$path.'" does not exist';
+		return undef;
+	}
+
+	return split(/\n/, $self->{zconf}->{conf}{zbgset}{'paths/'.$path});
 }
 
 =head2 getSetter
@@ -490,7 +762,7 @@ sub listPaths{
 	#blanks any previous errors
 	$self->errorblank;
 
-	my %paths=$self->{zconf}->regexVarGet('zbgset', '^paths/');
+	my %pathsH=$self->{zconf}->regexVarGet('zbgset', '^paths/');
 	if ($self->{zconf}->{error}) {
 		warn("ZConf-BGSet listPaths:2: regexVarGet failed.".
 			 " It failed with '".$self->{zconf}->{error}."', '"
@@ -502,7 +774,20 @@ sub listPaths{
 		return undef;
 	}
 
-	return keys(%paths);
+	#
+	my @keys=keys(%pathsH);
+	my @paths;
+	my $int=0;
+	while (defined($keys[$int])) {
+		my @split=split(/\//, $keys[$int],2);
+
+		push(@paths, $split[1]);
+
+		$int++;
+	}
+
+
+	return @paths;
 }
 
 =head2 pathExists
@@ -708,7 +993,14 @@ This sets a random background.
 One option is accepted and that is the path to use. If
 it is note specified, 'default' will be used.
 
+    #set one from the default path
     $zbg->setRand();
+    if($zbg->{error}){
+        print "Error!\n";
+    }
+    
+    #set one from the default path
+    $self->setRand('somepath');
     if($zbg->{error}){
         print "Error!\n";
     }
@@ -754,6 +1046,66 @@ sub setRand{
 	chomp($image);
 
 	$self->setBG({image=>$image});
+
+	return 1;
+}
+
+=head2 setPath
+
+This sets a sets/creates a path. If it is set, it will be overwritten.
+
+Two arguements are required. The first is the name of the path
+and the second is a array ref containing the various paths.
+
+    $zbg->setPath('somepath', \@paths);
+    if($zbg->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub setPath{
+	my $self=$_[0];
+	my $path=$_[1];
+	my @paths=$_[2];
+
+	#blanks any previous errors
+	$self->errorblank;
+
+	if (!defined($path)) {
+		warn('ZConf-BGSet getPath:5: No path specified');
+		$self->{error}=5;
+		$self->{errorString}='No path specified.';
+		return undef;
+	}
+
+	my $pathString=join("\n", @paths);
+
+	#
+	$self->{zconf}->setVar('zbgset', 'paths/'.$path, $pathString);
+
+	if ($self->{zconf}->{error}) {
+		warn('ZConf-BGSet setPath:2: ZConf setVar errored. error="'.
+			 $self->{zconf}->{error}.'" errorString="'.
+			 $self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf setVar errored. error="'.
+		                      $self->{zconf}->{error}.'" errorString="'.
+		                      $self->{zconf}->{errorString}.'"';
+		return undef;
+	}
+
+	$self->{zconf}->writeSetFromLoadedConfig({config=>'zbgset'});
+	if ($self->{zconf}->{error}) {
+		warn('ZConf-BGSet createPath:2: ZConf writeSetFromLoadedConfig errored. error="'.
+			 $self->{zconf}->{error}.'" errorString="'.
+			 $self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf writeSetFromLoadedConfig errored. error="'.
+		                      $self->{zconf}->{error}.'" errorString="'.
+		                      $self->{zconf}->{errorString}.'"';
+		return undef;
+	}
 
 	return 1;
 }
@@ -1084,6 +1436,14 @@ The file does not exist.
 =head2 14
 
 The path does not exist.
+
+=head2 15
+
+No default path defined.
+
+=head2 16
+
+The path already exists.
 
 =head1 AUTHOR
 
