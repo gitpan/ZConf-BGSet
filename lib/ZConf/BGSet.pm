@@ -12,11 +12,11 @@ ZConf::BGSet - A perl module for background management.
 
 =head1 VERSION
 
-Version 0.1.0
+Version 0.2.0
 
 =cut
 
-our $VERSION = '0.1.0';
+our $VERSION = '0.2.0';
 
 
 =head1 SYNOPSIS
@@ -611,6 +611,35 @@ sub getPath{
 	return split(/\n/, $self->{zconf}->{conf}{zbgset}{'paths/'.$path});
 }
 
+=head2 getSet
+
+This gets what the current set is.
+
+    my $set=$zbg->getSet;
+    if($zcr->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub getSet{
+	my $self=$_[0];
+
+	my $set=$self->{zconf}->getSet('zbgset');
+	if($self->{zconf}->{error}){
+		warn('ZConf-BGSet getSet:2: ZConf error getting the loaded set the config "zbgset".'.
+			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf error getting the loaded set the config "zbgset".'.
+			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
+		return undef;
+	}
+
+	return $set;
+}
+
 =head2 getSetter
 
 This fetches a setter.
@@ -790,6 +819,38 @@ sub listPaths{
 	return @paths;
 }
 
+=head2 listSets
+
+This lists the available sets.
+
+    my @sets=$zbg->listSets;
+    if($zcr->{error}){
+        print "Error!";
+    }
+
+=cut
+
+sub listSets{
+	my $self=$_[0];
+
+	#blanks any previous errors
+	$self->errorBlank;
+
+	my @sets=$self->{zconf}->getAvailableSets('zbgset');
+	if($self->{zconf}->{error}){
+		warn('ZConf-BGSet listSets:2: ZConf error listing sets for the config "zbgset".'.
+			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf error listing sets for the config "zbgset".'.
+			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
+		return undef;
+	}
+
+	return @sets;
+}
+
 =head2 pathExists
 
 This verifies a path exists.
@@ -827,6 +888,48 @@ sub pathExists{
 
 	#if it is not defined, return undef
 	if (!defined($self->{zconf}->{conf}->{zbgset}->{$fullpath})) {
+		return undef;
+	}
+
+	return 1;
+}
+
+=head2 readSet
+
+This reads a specific set. If the set specified
+is undef, the default set is read.
+
+    #read the default set
+    $zbg->readSet();
+    if($zbg->{error}){
+        print "Error!\n";
+    }
+
+    #read the set 'someSet'
+    $zbg->readSet('someSet');
+    if($zbg->{error}){
+        print "Error!\n";
+    }
+
+=cut
+
+sub readSet{
+	my $self=$_[0];
+	my $set=$_[1];
+
+	
+	#blanks any previous errors
+	$self->errorBlank;
+
+	$self->{zconf}->read({config=>'zbgset', set=>$set});
+	if ($self->{zconf}->{error}) {
+		warn('ZConf-BGSet readSet:2: ZConf error reading the config "zbgset".'.
+			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
+		$self->{error}=2;
+		$self->{errorString}='ZConf error reading the config "zbgset".'.
+			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
+			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
 		return undef;
 	}
 

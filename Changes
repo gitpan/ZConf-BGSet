@@ -1,5 +1,8 @@
 Revision history for ZConf-BGSet
 
+0.2.0	2009-02-20/19:10
+		-Add 'readSet', 'getSet', 'listSets'.
+
 0.1.0   2009-02-01/23:10
 		-Added 'getPath', 'setPath', 'delPath', 'getLast', and 'getDefaultPath'.
 		-'listPaths' no longer leaves 'paths/' prepended.
