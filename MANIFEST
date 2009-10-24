@@ -8,3 +8,4 @@ t/pod-coverage.t
 t/pod.t
 bin/zbgset
 bin/zbgset-admin
+bin/zbgset-pt

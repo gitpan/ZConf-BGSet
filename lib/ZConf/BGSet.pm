@@ -5,6 +5,7 @@ use strict;
 use Image::Size::FillFullSelect;
 use ZConf;
 use File::Spec;
+use X11::Resolution;
 
 =head1 NAME
 
@@ -12,11 +13,11 @@ ZConf::BGSet - A perl module for background management.
 
 =head1 VERSION
 
-Version 0.2.0
+Version 1.0.0
 
 =cut
 
-our $VERSION = '0.2.0';
+our $VERSION = '1.0.0';
 
 
 =head1 SYNOPSIS
@@ -34,18 +35,10 @@ This initializes it.
 
 One arguement is taken and that is a hash value.
 
+If this it fails, $zbg->{perror} is set and the other methods
+will always error as a permanent error has been set.
+
 =head3 hash values
-
-=head2 autoinit
-
-If this is set to true, it will automatically call
-init the set and config. If this is set to false or
-not defined, besure to check '$zbg->{init}' to see
-if the config/module has been initiated or not.
-
-=head2 set
-
-This is the set to load initially.
 
 =head4 zconf
 
@@ -63,122 +56,95 @@ sub new {
 	if(defined($_[1])){
 		%args= %{$_[1]};
 	}
+	my $function='new';
 
-	my $self={error=>undef, errorString=>undef};
+	my $self={
+			  error=>undef,
+			  errorString=>undef,
+			  perror=>undef,
+			  module=>'ZConf-BGSet',
+			  zconfconfig=>'zbgset',
+			  };
 	bless $self;
 
-	#this sets the set to undef if it is not defined
-	if (!defined($args{set})) {
-		$self->{set}=undef;
-	}else {
-		$self->{set}=$args{set};
-	}
-
-	#this sets the set to undef if it is not defined
-	if (!defined($args{autoinit})) {
-		$self->{autoinit}=undef;
-	}else {
-		$self->{autoinit}=$args{set};
-	}
-
-	#this is done to keep from throwing an error when we try to pass it to ZConf->new
+	#get the ZConf object
 	if (!defined($args{zconf})) {
-		$args{zconf}={};
-	}
-
-	#creates the ZConf object
-	$self->{zconf}=ZConf->new(%{$args{zconf}});
-	if(defined($self->{zconf}->{error})){
-		warn("ZConf-BGSet new:1: Could not initiate ZConf. It failed with '"
-			 .$self->{zconf}->{error}."', '".$self->{zconf}->{errorString}."'");
-		$self->{error}=1;
-		$self->{errorString}="Could not initiate ZConf. It failed with '"
-		                      .$self->{zconf}->{error}."', '".
-							  $self->{zconf}->{errorString}."'";
-		return $self;
+		#creates the ZConf object
+		$self->{zconf}=ZConf->new();
+		if(defined($self->{zconf}->{error})){
+			$self->{error}=1;
+			$self->{perror}=1;
+			$self->{errorString}="Could not initiate ZConf. It failed with '"
+			                     .$self->{zconf}->{error}."', '".
+			                     $self->{zconf}->{errorString}."'";
+			warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
+			return $self;
+		}
+	}else {
+		$self->{zconf}=$args{zconf};
 	}
 
 	#create the config if it does not exist
 	#if it does exist, make sure the set we are using exists
-    $self->{init} = $self->{zconf}->configExists("zbgset");
+    my $returned = $self->{zconf}->configExists($self->{zconfconfig});
 	if($self->{zconf}->{error}){
-		warn("ZConf-BGSet new:2: Could not check if the config 'zbgset' exists.".
-			 " It failed with '".$self->{zconf}->{error}."', '"
-			 .$self->{zconf}->{errorString}."'");
 		$self->{error}=2;
-		$self->{errorString}="Could not check if the config 'zbgset' exists.".
-	   		                 " It failed with '".$self->{zconf}->{error}."', '"
-			                 .$self->{zconf}->{errorString}."'";
+		$self->{perror}=1;
+		$self->{errorString}="Checking if '".$self->{zconfconfig}."' exists failed. error='".
+                             $self->{zconf}->{error}."', errorString='".
+                             $self->{zconf}->{errorString}."'";
+		warn($self->{module}.' '.$function.':'.$self->{error}.':'.$self->{errorString});
 		return $self;
 	}
-
-	#if it is not inited, check to see if it needs to do so
-	if (!$self->{init} && $self->{autoinit}) {
-		$self->init($self->{set});
-		if ($self->{error}) {
-			warn('ZConf-BGset new:4: Autoinit failed.');
-		}else {
-			#if init works, it is now inited and thus we set it to one
-			$self->{init}=1;
-		}
-		#we don't set any error stuff here even if the above action failed...
-		#it will have been set any ways by init methode
-		return $self;
-	}
-
-	#checks it is set to use the default set
-	#use defined as '0' is a legit set name and is a perl boolean for false
-	if (!defined($self->{set})) {
-		$self->{init}=$self->{zconf}->defaultSetExists('zbgset');
-		if($self->{zconf}->{error}){
-			warn("ZConf-BGSet new:2: defaultSetExists failed for 'zbgset'.".
-				 " It failed with '".$self->{zconf}->{error}."', '"
-				 .$self->{zconf}->{errorString}."'");
-			$self->{error}=2;
-			$self->{errorString}="defaultSetExists failed for 'zbgset'.".
-	   		                 " It failed with '".$self->{zconf}->{error}."', '"
-			                 .$self->{zconf}->{errorString}."'";
+	
+	#initiate the config if it does not exist
+	if (!$returned) {
+		#init it
+		$self->init;
+		if ($self->{zconf}->{error}) {
+			$self->{perror}=1;
+			$self->{errorString}='Init failed.';
+			warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 			return $self;
 		}
-	}
-
-	#check it if it set to use a specific set
-	#use defined as '0' is a legit set name and is a perl boolean for false
-	if (defined($self->{set})) {
-		$self->{init}=$self->{zconf}->setExists('zbgset', $self->{set});
-		if($self->{zconf}->{error}){
-			warn("ZConf-BGSet new:2: defaultSetExists failed for 'zbgset'.".
-				 " It failed with '".$self->{zconf}->{error}."', '"
-				 .$self->{zconf}->{errorString}."'");
+	}else {
+		#if we have a set, make sure we also have a set that will be loaded
+		$returned=$self->{zconf}->defaultSetExists($self->{zconfconfig});
+		if ($self->{zconf}->{error}) {
 			$self->{error}=2;
-			$self->{errorString}="defaultSetExists failed for 'zbgset'.".
-	   		                 " It failed with '".$self->{zconf}->{error}."', '"
-			                 .$self->{zconf}->{errorString}."'";
+			$self->{perror}=1;
+			$self->{errorString}="Checking if '".$self->{zconfconfig}."' exists failed. error='".
+			                     $self->{zconf}->{error}."', errorString='".
+			                     $self->{zconf}->{errorString}."'";
+			warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 			return $self;
 		}
+		
+		#if we don't have a default set, initialize it
+		if (!$returned) {
+			#init it
+			$self->init;
+			if ($self->{zconf}->{error}) {
+				$self->{perror}=1;
+				$self->{errorString}='Init failed.';
+				warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
+				return $self;
+			}
+		}
 	}
 
-	#the first one does this if the config has not been done yet
-	#this one does it if the set has not been done yet
-	#if it is not inited, check to see if it needs to do so
-	if (!$self->{init} && $self->{autoinit}) {
-		$self->init($self->{set});
-		if ($self->{error}) {
-			warn('ZConf-BGset new:4: Autoinit failed.');
-		}else {
-			#if init works, it is now inited and thus we set it to one
-			$self->{init}=1;
-		}
-		#we don't set any error stuff here even if the above action failed...
-		#it will have been set any ways by init methode
+	#read the config
+	$self->{zconf}->read({config=>$self->{zconfconfig}});
+	if ($self->{zconf}->{error}) {
+		$self->{error}=1;
+		$self->{perror}=1;
+		$self->{errorString}="Reading the ZConf config '".$self->{zconfconfig}."' failed. error='".
+		                     $self->{zconf}->{error}."', errorString='".
+		                     $self->{zconf}->{errorString}."'";
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return $self;
 	}
-
-	#reads it if it does not need to be initiated
-	if ($self->{init}) {
-		$self->{zconf}->read({set=>$self->{set}, config=>'zbgset'});
-	}
-
+	
 	return $self;
 }
 
@@ -220,8 +186,14 @@ sub addToLast{
 	if(defined($_[1])){
 		%args= %{$_[1]};
 	}
+	my $function='addToLast';
 
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
+
 
 	#gets the hostname if it is not specified
 	if (!defined($args{hostname})) {
@@ -237,9 +209,9 @@ sub addToLast{
 	#make sure display is defined can be found
 	if (!defined($args{display})) {
 		if (!defined($ENV{DISPLAY})) {
-			warn('ZConf-BGSet addToLast:8: $args{display} or $ENV{DISPLAY} not defined');
 			$self->{error}=8;
 			$self->{errorString}='$args{display} or $ENV{DISPLAY} not defined';
+			warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 			return undef;
 		}
 		$args{display}=$ENV{DISPLAY};
@@ -247,41 +219,41 @@ sub addToLast{
 
 	#error if the filltype is not specified
 	if (!defined($args{filltype})) {
-		warn('ZConf-BGSet addToLast:5: $args{filltype} is not defined');
 		$self->{error}=5;
 		$self->{errorString}='$args{filltype} is not defined';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;		
 	}
 
 	#error if the image is specified
 	if (!defined($args{image})) {
-		warn('ZConf-BGSet addToLast:5: $args{image} is not defined');
 		$self->{error}=5;
 		$self->{errorString}='$args{image} is not defined';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;		
 	}
 
 	#make sure a legit filltype is specified
 	if (!$self->validSetterName($args{filltype})) {
-		warn('ZConf-BGSet addToLast:6: "'.$args{filltype}.'" is not a valid setter name');
 		$self->{error}=6;
 		$self->{errorString}='"'.$args{filltype}.'" is not a valid setter name.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
 	#errors if : is found in the hostname
 	if ($args{hostname} =~ /:/) {
-		warn('ZConf-BGSet addToLast:9: Hostname contains ":"');
 		$self->{error}=9;
 		$self->{errorString}='Hostname contains ":".';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
 	#make sure it is a legit display name
 	if (!$args{display} =~ /^:[[:digit:]]*\.[[:digit:]]*$/) {
-		warn('ZConf-BGSet addToLast:10: Invalid display name');
 		$self->{error}=10;
 		$self->{errorString}='Invalid display name.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;		
 	}
 
@@ -328,14 +300,19 @@ sub createPath{
 	my $self=$_[0];
 	my $path=$_[1];
 	my @paths=$_[2];
+	my $function='createPath';
 
 	#blanks any previous errors
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	if (!defined($path)) {
-		warn('ZConf-BGSet getPath:5: No path specified');
 		$self->{error}=5;
 		$self->{errorString}='No path specified.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -349,9 +326,9 @@ sub createPath{
 
 	#error if the path already exists
 	if ($pathExists) {
-		warn('ZConf-BGSet The path "'.$path.'" already exists');
 		$self->{error}=16;
 		$self->{errorString}='The path "'.$path.'" already exists';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -365,25 +342,21 @@ sub createPath{
 	$self->{zconf}->setVar('zbgset', 'paths/'.$path, $pathString);
 
 	if ($self->{zconf}->{error}) {
-		warn('ZConf-BGSet createPath:2: ZConf setVar errored. error="'.
-			 $self->{zconf}->{error}.'" errorString="'.
-			 $self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf setVar errored. error="'.
 		                      $self->{zconf}->{error}.'" errorString="'.
 		                      $self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
 	$self->{zconf}->writeSetFromLoadedConfig({config=>'zbgset'});
 	if ($self->{zconf}->{error}) {
-		warn('ZConf-BGSet createPath:2: ZConf writeSetFromLoadedConfig errored. error="'.
-			 $self->{zconf}->{error}.'" errorString="'.
-			 $self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf writeSetFromLoadedConfig errored. error="'.
 		                      $self->{zconf}->{error}.'" errorString="'.
 		                      $self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -406,14 +379,19 @@ One arguement is taken and that is the name of the path to remove.
 sub delPath{
 	my $self=$_[0];
 	my $path=$_[1];
+	my $function='delPath';
 
 	#blanks any previous errors
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	if (!defined($path)) {
-		warn('ZConf-BGSet delPath:5: No path specified');
 		$self->{error}=5;
 		$self->{errorString}='No path specified.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -425,22 +403,20 @@ sub delPath{
 	}
 
 	if (!$pathExists) {
-		warn('ZConf-BGSet delPath:14: The path "'.$path.'" does not exist');
 		$self->{error}=14;
 		$self->{errorString}='The path "'.$path.'" does not exist';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
 	#remove it
 	my @deleted=$self->{zconf}->regexVarDel('zbgset', '^paths/'.quotemeta($path).'$');
 	if ($self->{zconf}->{error}) {
-		warn('ZConf-BGSet delPath:2: ZConf regexVarDel errored. error="'.
-			 $self->{zconf}->{error}.'" errorString="'.
-			 $self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf writeSetFromLoadedConfig errored. error="'.
 		                      $self->{zconf}->{error}.'" errorString="'.
 		                      $self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -448,13 +424,11 @@ sub delPath{
 	#write it
 	$self->{zconf}->writeSetFromLoadedConfig({config=>'zbgset'});
 	if ($self->{zconf}->{error}) {
-		warn('ZConf-BGSet delPath:2: ZConf writeSetFromLoadedConfig errored. error="'.
-			 $self->{zconf}->{error}.'" errorString="'.
-			 $self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf writeSetFromLoadedConfig errored. error="'.
 		                      $self->{zconf}->{error}.'" errorString="'.
 		                      $self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -474,14 +448,19 @@ This fetches the default path.
 
 sub getDefaultPath{
 	my $self=$_[0];
+	my $function='getDefaultPath';
 
 	#blanks any previous errors
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	if (!defined($self->{zconf}->{conf}{zbgset}{path})) {
-		warn('ZConf-BGSet getDefaultPath:15: No default path defined');
 		$self->{error}=15;
 		$self->{errorString}='No default path defined';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -511,6 +490,13 @@ No arguements are taken.
 
 sub getLast{
 	my $self=$_[0];
+	my $function='getLast';
+
+	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	my %returnH;
 	$returnH{display}=undef;
@@ -555,6 +541,13 @@ For a description of it's formatting, please see
 
 sub getLastRaw{
 	my $self=$_[0];
+	my $function='getLastRaw';
+
+	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	#returns it if last has been removed for some bloody reason
 	if (!defined($self->{zconf}->{conf}->{zbgset}->{last})) {
@@ -583,14 +576,19 @@ The returned value is an array
 sub getPath{
 	my $self=$_[0];
 	my $path=$_[1];
+	my $function='getPath';
 
 	#blanks any previous errors
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	if (!defined($path)) {
-		warn('ZConf-BGSet getPath:5: No path specified');
 		$self->{error}=5;
 		$self->{errorString}='No path specified.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -602,9 +600,9 @@ sub getPath{
 	}
 
 	if (!$pathExists) {
-		warn('ZConf-BGSet getPath:14: The path "'.$path.'" does not exist');
 		$self->{error}=14;
 		$self->{errorString}='The path "'.$path.'" does not exist';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -624,16 +622,21 @@ This gets what the current set is.
 
 sub getSet{
 	my $self=$_[0];
+	my $function='getSet';
+
+	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	my $set=$self->{zconf}->getSet('zbgset');
 	if($self->{zconf}->{error}){
-		warn('ZConf-BGSet getSet:2: ZConf error getting the loaded set the config "zbgset".'.
-			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
-			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf error getting the loaded set the config "zbgset".'.
 			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
 			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -664,21 +667,26 @@ The only image accepted is the name of the setter to fetch.
 sub getSetter{
 	my $self=$_[0];
 	my $name=$_[1];
+	my $function='getSetter';
 
 	#blanks any previous errors
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	if (!$self->validSetterName($name)) {
-		warn('ZConf-BGSet getSetter:6: "'.$name.'" is not a valid setter name');
 		$self->{error}=6;
 		$self->{errorString}='"'.$name.'" is not a valid setter name.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
 	if (!defined($self->{zconf}->{conf}->{zbgset}->{$name})) {
-		warn('ZConf-BGSet getSetter:7: "'.$name.'" does not exist');
 		$self->{error}=7;
 		$self->{errorString}='"'.$name.'" does not exist.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -711,19 +719,22 @@ it is not defined, ZConf will use the default one.
 sub init{
 	my $self=$_[0];
 	my $set=$_[1];
+	my $function='init';
 
 	#blanks any previous errors
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	my $returned = $self->{zconf}->configExists("zbgset");
 	if(defined($self->{zconf}->{error})){
-		warn("ZConf-BGSet init:2: Could not check if the config 'zbgset' exists.".
-			 " It failed with '".$self->{zconf}->{error}."', '"
-			 .$self->{zconf}->{errorString}."'");
 		$self->{error}=2;
 		$self->{errorString}="Could not check if the config 'zbgset' exists.".
 		                     " It failed with '".$self->{zconf}->{error}."', '"
 			                 .$self->{zconf}->{errorString}."'";
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -731,13 +742,11 @@ sub init{
 	if (!$returned) {
 		$self->{zconf}->createConfig("zbgset");
 		if ($self->{zconf}->{error}) {
-			warn("ZConf-BGSet init:2: Could not create the ZConf config 'zbgset'.".
-				 " It failed with '".$self->{zconf}->{error}."', '"
-				 .$self->{zconf}->{errorString}."'");
 			$self->{error}=2;
 			$self->{errorString}="Could not create the ZConf config 'zbgset'.".
 			                 " It failed with '".$self->{zconf}->{error}."', '"
 			                 .$self->{zconf}->{errorString}."'";
+			warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 			return undef;
 		}
 	}
@@ -761,13 +770,11 @@ sub init{
 							 );
 	#error if the write failed
 	if ($self->{zconf}->{error}) {
-		warn("ZConf-BGSet init:2: writeSetFromHash failed.".
-			 " It failed with '".$self->{zconf}->{error}."', '"
-			 .$self->{zconf}->{errorString}."'");
 		$self->{error}=2;
 		$self->{errorString}="writeSetFromHash failed.".
 			                 " It failed with '".$self->{zconf}->{error}."', '"
 			                 .$self->{zconf}->{errorString}."'";
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -787,19 +794,22 @@ This gets a lists of configured paths.
 
 sub listPaths{
 	my $self=$_[0];
+	my $function='listPaths';
 
 	#blanks any previous errors
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	my %pathsH=$self->{zconf}->regexVarGet('zbgset', '^paths/');
 	if ($self->{zconf}->{error}) {
-		warn("ZConf-BGSet listPaths:2: regexVarGet failed.".
-			 " It failed with '".$self->{zconf}->{error}."', '"
-			 .$self->{zconf}->{errorString}."'");
 		$self->{error}=2;
 		$self->{errorString}="writeSetFromHash failed.".
 			                 " It failed with '".$self->{zconf}->{error}."', '"
 			                 .$self->{zconf}->{errorString}."'";
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -832,19 +842,22 @@ This lists the available sets.
 
 sub listSets{
 	my $self=$_[0];
+	my $function='listSets';
 
 	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	my @sets=$self->{zconf}->getAvailableSets('zbgset');
 	if($self->{zconf}->{error}){
-		warn('ZConf-BGSet listSets:2: ZConf error listing sets for the config "zbgset".'.
-			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
-			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf error listing sets for the config "zbgset".'.
 			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
 			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -871,15 +884,20 @@ Only one arguement is taken and that is the name of the path.
 sub pathExists{
 	my $self=$_[0];
 	my $path=$_[1];
+	my $function='pathExists';
 
 	#blank any previous errors
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	#error if no path is specified
 	if (!defined($path)) {
-		warn('ZConf-BGSet pathExists:5: The path is undefined');
 		$self->{error}=5;
 		$self->{errorString}='The path is undefined.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -916,20 +934,22 @@ is undef, the default set is read.
 sub readSet{
 	my $self=$_[0];
 	my $set=$_[1];
-
+	my $function='readSet';
 	
 	#blanks any previous errors
 	$self->errorBlank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	$self->{zconf}->read({config=>'zbgset', set=>$set});
 	if ($self->{zconf}->{error}) {
-		warn('ZConf-BGSet readSet:2: ZConf error reading the config "zbgset".'.
-			 ' ZConf error="'.$self->{zconf}->{error}.'" '.
-			 'ZConf error string="'.$self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf error reading the config "zbgset".'.
 			                 ' ZConf error="'.$self->{zconf}->{error}.'" '.
 			                 'ZConf error string="'.$self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -972,6 +992,13 @@ sub setBG{
 	if(defined($_[1])){
 		%args= %{$_[1]};
 	}
+	my $function='setBG';
+
+	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	#default to the default filltype if none is specified
 	if (!defined($args{filltype})) {
@@ -980,9 +1007,9 @@ sub setBG{
 
 	#error if no image is specified
 	if (!defined($args{image})) {
-		warn('ZConf-BGSet setBG:5: $args{image} is not specified');
 		$self->{error}=5;
 		$self->{errorString}='$args{image} is not specified.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;		
 	}
 
@@ -993,16 +1020,19 @@ sub setBG{
 
 	#error if it does not exist or is not a file
 	if (! -f $args{image}) {
-		warn('ZConf-BGSet setBG:13: "'.$args{image}.'" does not exist or is not a file');
 		$self->{error}=13;
 		$self->{errorString}='"'.$args{image}.'" does not exist or is not a file.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;		
 	}
 
 	#get the filltype if it is set to auto
 	if ($args{filltype} eq 'auto') {
+		my $x11res=X11::Resolution->new;
+		my ($xres, $yres)=$x11res->getResolution;
+
 		my $iffs = Image::Size::FillFullSelect->new();
-		$args{filltype} = $iffs->select($args{image});
+		$args{filltype} = $iffs->select($args{image}, undef, undef, $xres, $yres);
 		if(!defined($args{filltype})){
 			warn("ZConf-BGSet setBG:7: Auto selection for the image size failed. Image::Size".
 				"does not regard the file, '".$args{image}."', as a image");
@@ -1031,16 +1061,16 @@ sub setBG{
 	my $exitcode=$? >> 8;
 
 	if ($? eq '-1') {
-		warn('ZConf-BGSet setBG:12: Failed to execute the setter, "'.$setter.'",');
 		$self->{error}=12;
 		$self->{errorString}='Failed to execute the setter, "'.$setter.'".';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
 	if ($exitcode > 0) {
-		warn('ZConf-BGSet setBG:12: The setter, "'.$setter.'", exited with a non-zero');
 		$self->{error}=12;
 		$self->{errorString}='The Ssetter, "'.$setter.'", exited with a non-zero.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -1073,6 +1103,13 @@ No arguements are accepted.
 
 sub setLast{
 	my $self=$_[0];
+	my $function='setLast';
+
+	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	my $lastraw=$self->getLastRaw;
 
@@ -1113,6 +1150,13 @@ it is note specified, 'default' will be used.
 sub setRand{
 	my $self=$_[0];
 	my $path=$_[1];
+	my $function='setRand';
+
+	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	#set the path to 'default' if it is specified
 	if (!defined($path)) {
@@ -1121,9 +1165,9 @@ sub setRand{
 
 	#error if no path is specified
 	if (!defined($self->{zconf}{conf}{zbgset}{'paths/'.$path})) {
-		warn('ZConf-BGSet setRand:14: The path "'.$path.'" does not exist');
 		$self->{error}=14;
 		$self->{errorString}='The path "'.$path.'" does not exist';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -1170,15 +1214,20 @@ and the second is a array ref containing the various paths.
 sub setPath{
 	my $self=$_[0];
 	my $path=$_[1];
-	my @paths=$_[2];
+	my @paths=@{$_[2]};
+	my $function='setPath';
 
 	#blanks any previous errors
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	if (!defined($path)) {
-		warn('ZConf-BGSet getPath:5: No path specified');
 		$self->{error}=5;
 		$self->{errorString}='No path specified.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -1188,25 +1237,21 @@ sub setPath{
 	$self->{zconf}->setVar('zbgset', 'paths/'.$path, $pathString);
 
 	if ($self->{zconf}->{error}) {
-		warn('ZConf-BGSet setPath:2: ZConf setVar errored. error="'.
-			 $self->{zconf}->{error}.'" errorString="'.
-			 $self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf setVar errored. error="'.
 		                      $self->{zconf}->{error}.'" errorString="'.
 		                      $self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
 	$self->{zconf}->writeSetFromLoadedConfig({config=>'zbgset'});
 	if ($self->{zconf}->{error}) {
-		warn('ZConf-BGSet createPath:2: ZConf writeSetFromLoadedConfig errored. error="'.
-			 $self->{zconf}->{error}.'" errorString="'.
-			 $self->{zconf}->{errorString}.'"');
 		$self->{error}=2;
 		$self->{errorString}='ZConf writeSetFromLoadedConfig errored. error="'.
 		                      $self->{zconf}->{error}.'" errorString="'.
 		                      $self->{zconf}->{errorString}.'"';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -1233,22 +1278,27 @@ Only one arguement is taken and that is the name of the setter.
 sub setterExists{
 	my $self=$_[0];
 	my $setter=$_[1];
+	my $function='setterExists';
 
 	#blank any previous errors
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	#error if no path is specified
 	if (!defined($setter)) {
-		warn('ZConf-BGSet setterExists:5: The setter is undefined');
 		$self->{error}=5;
 		$self->{errorString}='The setter is undefined.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
 	if (!$self->validSetterName($setter)) {
-		warn('ZConf-BGSet setterExists:6: "'.$setter.'" is not a valid setter name');
 		$self->{error}=6;
 		$self->{errorString}='"'.$setter.'" is not a valid setter name.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -1278,40 +1328,41 @@ sub setSetter{
 	my $self=$_[0];
 	my $name=$_[1];
 	my $setter=$_[2];
+	my $function='setSetter';
 
 	#blanks any previous errors
 	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	if (!$self->validSetterName($name)) {
-		warn('ZConf-BGSet setSetter:6: "'.$name.'" is not a valid setter name');
 		$self->{error}=6;
 		$self->{errorString}='"'.$name.'" is not a valid setter name.';
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
 	#set it
 	$self->{zconf}->setVat('zbgset', $name, $setter);
 	if ($self->{zconf}->{error}) {
-		warn("ZConf-BGSet init:2: setVar failed.".
-			 " It failed with '".$self->{zconf}->{error}."', '"
-			 .$self->{zconf}->{errorString}."'");
 		$self->{error}=2;
 		$self->{errorString}="setVar failed.".
 			                 " It failed with '".$self->{zconf}->{error}."', '"
 			                 .$self->{zconf}->{errorString}."'";
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
 	#save it
 	$self->{zconf}->writeSetFromLoadedConfig('zbgset', $name, $setter);
 	if ($self->{zconf}->{error}) {
-		warn("ZConf-BGSet init:2: writeSetFromLoadedConfig failed.".
-			 " It failed with '".$self->{zconf}->{error}."', '"
-			 .$self->{zconf}->{errorString}."'");
 		$self->{error}=2;
 		$self->{errorString}="writeSetFromLoadedConfig failed.".
 			                 " It failed with '".$self->{zconf}->{error}."', '"
 			                 .$self->{zconf}->{errorString}."'";
+		warn($self->{module}.' '.$function.':'.$self->{error}.': '.$self->{errorString});
 		return undef;
 	}
 
@@ -1339,6 +1390,13 @@ is not set, it will also return false.
 sub validSetterName{
 	my $self=$_[0];
 	my $name=$_[1];
+	my $function='validSetterName';
+
+	$self->errorblank;
+	if ($self->{error}) {
+		warn($self->{module}.' '.$function.': A permanent error is set');
+		return undef;
+	}
 
 	if (!defined($name)) {
 		return undef;
@@ -1382,6 +1440,10 @@ It does the following.
 #blanks the error flags
 sub errorblank{
         my $self=$_[0];
+
+		if ($self->{perror}) {
+			return undef;
+		}
 
         $self->{error}=undef;
         $self->{errorString}="";

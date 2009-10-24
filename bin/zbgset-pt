@@ -26,150 +26,172 @@ use strict;
 use warnings;
 use Getopt::Std;
 use ZConf::BGSet;
-
+use Image::Size::FillFullSelect;
+use X11::Resolution;
+use Imager::AverageGray;
+use String::ShellQuote;
 
 $Getopt::Std::STANDARD_HELP_VERSION=1;
 
 #version function
 sub main::VERSION_MESSAGE {
-	print "zbgset 3.2.1\n";
+	print "zbgset-pt 0.0.0\n";
 };
 
 #print help
 sub main::HELP_MESSAGE {
 	print "\n".
-		"-r  choose a random background\n".
-		"-f <file>  choose a set the bg as\n".
-		"-l  use the last BG\n".
-		"\n".
-		"-F <filltype> fill type to use\n".
-		"-s <set>  What set to use.\n".
-		"-p <path>  The path variable to use if -r is given.".
-		"\n".
-		"FILL TYPES\n".
-		"center\n".
-		"tile\n".
-		"full\n".
-		"fill\n";
+		  "-d <dir>\n".
+	      "-f <fill type>\n".
+		  "-g <min gray>\n".
+		  "-G <max gray>\n".
+		  "-p <path>\n";
+		  "-s <set>\n".
 };
 
 #gets the options
 my %opts=();
-getopts('F:f:lrs:p:', \%opts);
-my %args;
+getopts('s:p:f:d:g:G:', \%opts);
 
-#makes sure the file exists if -f is used.
-if(defined($opts{f})){
-	if(!-f $opts{f}){
-		warn("zbgset:5: '".$opts{f}."' does not exist or is not a file.");
-		exit 5;
-	};
-};
+#make sure we have the specified switches
+if (!defined($opts{p})) {
+	warn('zbgset-pt: No path defined.');
+	exit 254;
+}
+if (!defined($opts{d})) {
+	warn('zbgset-pt: No directory defined.');
+	exit 254;
+}
+if (!defined($opts{f})) {
+	warn('zbgset-pt: No fill type defined.');
+	exit 254;
+}
+
+my $path=shell_quote($opts{d});
+my @files=`find $path -type f`;
+
+my $x11res=X11::Resolution->new;
+my ($xres, $yres)=$x11res->getResolution;
+
+my @matched;
+
+#init FillFullSelect
+my $iffs = Image::Size::FillFullSelect->new();
+
+#get default settings for average gray
+my $ag;
+if (defined($opts{g}) || $opts{G}) {
+	if (!defined($opts{g})) {
+		$opts{g}=0;
+	}
+
+	if (!defined($opts{G})) {
+		$opts{G}=255;
+	}
+
+	$ag=Imager::AverageGray->new;
+}
+
+#process the files
+my $int=0;
+while (defined($files[$int])) {
+	chomp($files[$int]);
+
+	#get the fill type for the file in question
+	my $filltype = $iffs->select($files[$int], undef, undef, $xres, $yres);
+
+	#if it worked, process it
+	if (defined($filltype)) {
+		#continue if it is the specified file type
+		if ($opts{f} eq $filltype) {
+			if (defined($opts{g})) {
+				my $ag=$ag->fromFile($files[$int]);
+				if (($ag >= $opts{g}) && ($ag <= $opts{G})) {
+					push(@matched, $files[$int]);
+				}
+			}else {
+				push(@matched, $files[$int]);
+			}
+		}
+	}
 
 
+	$int++;
+}
+
+#init ZConf::BGSet
 my $zbg=ZConf::BGSet->new();
 if ($zbg->{error}) {
-	warn('zbgset:1: Coult not initialize ZConf::BGSet');
+	warn('zbgset-pt: Coult not initialize ZConf::BGSet');
 	exit $zbg->{error};
 }
 
+#read the specified set
 if (defined($opts{s})) {
+	$zbg->readSet($opts{s});
 	if ($zbg->{error}) {
-		warn('zbgset: Coult not initialize ZConf::BGSet');
+		warn('zbgset-pt: Could not read the specified set');
 		exit $zbg->{error};
 	}
 }
 
-#handles it if -f is specified
-if(defined($opts{f})){
-	$zbg->setBG({image=>$opts{f}, filltype=>$opts{F}});
-	if ($zbg->{error}) {
-		warn('zbgset: setBG errored');
-		exit $zbg->{error};
-	}
+#set the path
+$zbg->setPath($opts{p}, \@matched);
+if ($zbg->{error}) {
+	warn('zbgset-pt: setPath errored');
+	exit $zbg->{error};
+}
 
-	exit 0;
-};
-
-#sets the last background
-if(defined($opts{l})){
-	$zbg->setLast({image=>$opts{f}, filltype=>$opts{F}});
-	if ($zbg->{error}) {
-		warn('zbgset:3: setLast errored');
-		exit $zbg->{error};
-	}
-
-	exit 0;
-};
-
-#handles if if a random background is selected
-if(defined($opts{r})){
-	$zbg->setRand($opts{p});
-	if ($zbg->{error}) {
-		warn('zbgset:4: setRand errored');
-		exit $zbg->{error};
-	}
-
-	exit 0;
-};
-
-exit 254;
+exit 1;
 
 =head1 NAME
 
-zbgset - A perl program for managing the background.
+zbgset-pt - Automatically populate a path using average gray or fill type.
 
 =head1 SYNOPSIS
 
-zbgset (B<-f> <file>|B<-r>|B<-l>) [B<-F> <fill type>] [B<-s> <ZConf set>]
+zbgset-pt B<-p> <path> B<-d> <dir> B<-f> <fill type> [B<-g> <min gray>] [B<-G> <max gray>]
+[B<-s> <set>]
 
-=head1 USAGE
+=head1 SWTICHES
 
-Either -f, -r, or -l need used.
+=head2 -d <dir>
 
-This does not actually set the background, but calls another program to do it,
-but what makes it useful is it allows for random images to be used as well as
-the last image to be called. This makes it useful for setting the image upon
-login or changing it regullarly through cron.
+The directory to process.
 
-When it is ran for the first time it creates a ZConf config named "zbgset" used
-store the settings.
+=head2 -f <fill type>
 
-=head1 ARGUEMENTS
+The fill type.
 
-=head2 B<-f> <file>
+This should be either fill or full.
 
-This specifies a file to use.
+=head2 -g <min gray>
 
-=head2 B<-F> <fill type>
+This is the min average gray.
 
-This specifies the fill type to use.
+=head2 -G <max gray>
 
-=head2 B<-l>
+This is the max average gray.
 
-Use the last image.
+=head2 -p <path>
 
-=head2 B<-p> <path>
+This is the path that will be files will be dumped into.
 
-If this is specified, the specified path is used for selecting the random image from.
+=head2 -s <set>
 
-=head2 B<-s> <ZConf set>
-
-This is the ZConf set to use for it. If the set has not been initiated before it
-will do so.
-
+This is the ZConf set to use.
 
 =head1 EXIT CODES
 
-Any codes not listed below reflect the error value of ZConf::BGSet.
+If a exit code is not listed below, it is what ever error value ZConf::BGSet returned.
 
 =head2 254
 
-No usable options specified.
+'-r', '-p', and '-d' have not been specified.
 
 =head1 AUTHOR
 
-Copyright (c) 2008, Zame C. Bowers <vvelox@vvelox.net>
+Copyright (c) 2009, Zame C. Bowers <vvelox@vvelox.net>
 
 All rights reserved.
 
@@ -193,39 +215,12 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
 THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-=head1 CHANGELOG
-
-=head2 3.2.1/2009-10-24
-
--Exit code cleanup,
-
--Update set usage.
-
--Remove notes about 'cair' from help.
-
-=head2 3.2.0/2009-01-13
-
--Import into ZConf::BSset.
-
--Make use of ZConf::BGSet.
-
-=head2 3.1.0/2008-10-21
-
--Add CHANGELOG to the POD.
-
--Add add the 'cair' setter, Content Aware Image Resizer. Use 'cairhelper' script
-from CPAN to use this.
-
-=head1 SCRIPT CATEGORIES
-
-Desktop
-
 =head1 OSNAMES
 
 any
 
 =head1 README
 
-zbgset - A perl program for managing the background.
+zbgset-pt - Automatically populate a path using average gray or fill type.
 
 =cut
